@@ -39,25 +39,24 @@ An additional standard transaction type is required on one of the networks for t
 
     x = serialized{pub-B6 OP_CHECKSIG}
 
-3) Bob creates his "bail-in" transaction. 
+3) Both parties creates their "bail-in" transaction. 
 
-This transaction can only be spent with both Alice and Bob's signatures.
+Transaction output A can only be spent with both parties' signatures.  Transaction B can only be spent by Bob, but it results in x being revealed.
 
     Name: Bob.Bail.In
     Input value:     B + 2*fb + change
     Input source:    (From Bob's coins, multiple inputs are allowed)
-    Output A value:  B + fb
+    Output A value:  B
     ScriptPubKey A:  OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
-    Output B value:  change
-    ScriptPubKey B:  <= 100 bytes
+    Output B value:  fb
+    ScriptPubKey B:  OP_HASH160 Hash160(x) OP_EQUAL
+    Output C value:  change
+    ScriptPubKey C:  <= 100 bytes
 
-    P2SH Redeem:  OP_2 pub-A1 pub-B1 OP_2 OP_CHECKMULTISIG
+    P2SH Redeem:  OP_2 pub-A1 pub-B2 OP_2 OP_CHECKMULTISIG
+    P2SH Redeem:  OP_2 pub-A1 pub-B1 pub-T OP_3 OP_CHECKMULTISIG
 
-4) Alice creates creates her bail-in transaction.
-
-Unlike Bob's bail-in, Alice's bail-in transaction has 3 outputs.
-
-The second output can only be spent if Bob publishes x.  It is also protected by multisig.
+Transaction output A can only be spent with both parties' signatures.  Transaction B can only be spent by Alice, but it requires x to be reveals by Bob first.
 
     Name: Alice.Bail.In
     Input value:  A + 2*fa + change
@@ -65,64 +64,44 @@ The second output can only be spent if Bob publishes x.  It is also protected by
     Output A value: A
     ScriptPubKey A: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
     Output B value: fa
-    ScriptPubKey B: OP_HASH160 Hash160(x) OP_EQUAL
+    ScriptPubKey B: OP_HASH160 Hash160(x) OP_EQUAL_VERIFY pub-A3 OP_CHECKSIG
     Output C value: change
     ScriptPubKey C: <= 100 bytes
 
-    P2SH Redeem:    OP_2 pub-A3 pub-B4 OP_2 OP_CHECKMULTISIG
+    P2SH Redeem:    OP_2 pub-A2 pub-B2 OP_2 OP_CHECKMULTISIG
+    P2SH Redeem:    OP_2 pub-A2 pub-B2 pub-T OP_3 OP_CHECKMULTISIG
 
 Note: x = serialized{pub-B6 OP_CHECKSIG}
 
+The shorter version of P2SH Redeem should be used when a third party is not used.
+
 Output B uses P2SH, this means that Bob must provide x in order to spend it.
 
-5) Bob and Alice exchange bail-in transaction hashes
+If a third party isn't used, then pub-T is not included and the key count (OP_3) is replaced by OP_2.
 
-Bob sends Alice Hash256(Bob.Bail.In) and the corresponding A index
+4) Bob and Alice exchange bail-in transaction hashes
+
+Bob sends Alice Hash256(Bob.Bail.In) and the corresponding A and B indexes
 
 Alice sends Bob Hash256(Alice.Bail.In) and the corresponding A and B indexes
 
 Note: The outputs in the bail-in transaction do not need to be ordered as given in steps 1 and 2.
 
-6) Bob creates Alice's payout transaction. 
+5) Both parties create the payout transactions
 
-This transaction can be spent by Alice, but only if she knows x.
+This transaction can be spent by Alice.  Since it has Bob.Bail.In:B as an input, she cannot be signed unless Bob reveals x.
 
     Name: Alice.Payout
-    Input value:  B + fb
+    Input value:  B
     Input source: Bob.Bail.In:A
+    Input value:  fb
+    Input source: Bob.Bail.In:B
     Output value: B
     ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
 
-    P2SH Redeem:  OP_HASH160 Hash160(x) OP_EQUAL_VERIFY pub-A2 OP_CHECKSIG
+    P2SH Redeem:  pub-A3 OP_CHECKSIG
 
-7) Bob creates his own refund transaction. 
-
-This transaction is timelocked, so that it can't be spent until the timeout (T) has passed.
-
-    Name: Bob.Refund
-    Input value:  B + fb
-    Input source: Bob.Bail.In:A
-    Output value: B
-    ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
-    Locktime:     (current block height) + (T / 10 minutes)
-
-    P2SH Redeem:  pub-B2 OP_CHECKSIG
-
-7b) If a trusted third party is desired to protect against transaction malleability, an additional transaction is required.
-
-    Name: Bob.Trusted.Refund
-    Input value:  B + fb
-    Input source: Bob.Bail.In:A
-    Output value: B
-    ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
-
-    P2SH Redeem:  OP_2 pub-B3 pub-T OP_2 OP_CHECKMULTISIG
-
-By acting together, Bob and the third party can spend Bob.Bail.In.
-
-8) Alice creates Bob's payout transaction. 
-
-This transaction can be spent by Bob.  However, since it has Alice.Bail.In:1 as an input, Bob must reveal x in order to spend it.
+This transaction can be spent by Bob.  However, since it has Alice.Bail.In:B as an input, he cannot sign the inputs unless he reveals x.
 
     Name: Bob.Payout
     Input value:  A
@@ -132,11 +111,22 @@ This transaction can be spent by Bob.  However, since it has Alice.Bail.In:1 as 
     Output value: A
     ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
 
-    P2SH Redeem:  pub-B5 OP_CHECKSIG
+    P2SH Redeem:  pub-B3 OP_CHECKSIG
 
-9) Alice creates her own refund transaction. 
+6) Both parties create the refund transactions
 
-This transaction is timelocked, so that it can't be spent for until half the timeout (T/2) has passed.  This transaction does not require Alice.Bail.In:1, so Alice can spend it without x being revealed.
+This transaction is timelocked, so that it can't be spent until the timeout (T) has passed.  This transaction does not require Bob.Bail.In:B, so Bob does not have to reveal x in order to spend it.
+
+    Name: Bob.Refund
+    Input value:  B
+    Input source: Bob.Bail.In:A
+    Output value: B - fb
+    ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
+    Locktime:     (current block height) + (T / 10 minutes)
+
+    P2SH Redeem:  pub-B4 OP_CHECKSIG
+
+This transaction is timelocked, so that it can't be spent until half the timeout (T/2) has passed.  This transaction does not require Alice.Bail.In:B, so Alice can spend it without x being revealed.
 
     Name: Alice.Refund
     Input value: A
@@ -145,39 +135,19 @@ This transaction is timelocked, so that it can't be spent for until half the tim
     ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
     Locktime:     current block height + ((T/2)/(altcoin block rate))
 
-    P2SH Redeem:  pub-A4 OP_CHECKSIG
+    P2SH Redeem:  pub-A5 OP_CHECKSIG
 
-9b) Alice creates the third party transaction, if required.
+7) Bob and Alice exchange signatures
 
-    Name: Alice.Trusted.Refund
-    Input value:  A
-    Input source: Alice.Bail.In:0
-    Output value: A - fa
-    ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
+Bob sends Alice signatures for Alice.Payout (Input: Bob.Bail.In:A) and Alice.Refund.
 
-    P2SH Redeem:  OP_2 pub-T pub-A5 OP_2 OP_CHECKMULTISIG
+Alice signs all three and now has 3 signed transactions.  Alice.Payout cannot be fully signed until x is revealed.
 
-9) Bob and Alice exchange transactions
+Alice sends Bob signatures for Bob.Payout (Input: Alice.Bail.In:A), Bob.Refund and Bob.Trusted.Refund.
 
-Bob sends Alice unsigned versions of Bob.Refund and Bob.Trusted.Refund and an (half) signed version of Alice.Payout.
+Bob signs all three and has 3 fully signed transactions.
 
-Alice signs all three and sends back (half) signed versions of Bob.Refund and Bob.Trusted.Refund.
-
-Alice has a fully signed version of Alice.Payout.
-
-When Bob signs both of them, he has fully signed versions of Bob.Refund and Bob.Trusted.Refund.
-
-Alice sends Bob unsigned versions of Alice.Refund and Alice.Trusted.Refund and an (half) signed version of Bob.Payout.
-
-Bob signs all three and sends back (half) signed versions of Alice.Refund and Alice.Trusted.Refund.
-
-Bob has a fully signed version of Bob.Payout.
-
-When Alice signs both of them, she has fully signed versions of Alice.Refund and Alice.Trusted.Refund.
-
-Each of the parties has fully signed versions of the three transactions relating to them.  
-
-10) Exchange of bail-in transactions
+8) Exchange of bail-in transactions
 
 The parties can safely exchange bail-in transactions at this point.  This is not necessary for the protocol, but would allow both parties to verify that the other party at least has a valid bail-in transaction before locking their funds. 
 
@@ -275,7 +245,7 @@ total_length is equal to 3 + len(R) + len(S).
 
 R and S are represented in signed Big Endian format without leading zeros, except that exactly one leading zero is mandatory, if the number would otherwise be negative.  This occurs if the MSB in the first non-zero byte is set.
 
-Transactions shall be serialized using the bitcoin protocol serialization.  Partially signed transactions should include the partial signature in their sigScript fields.  The serialized P2SH Redeem script should be appended to the serialized transaction.
+Transactions shall be serialized using the bitcoin protocol serialization.  Transactions that are not timelocked should have a lock_time and sequence number of 0.  Timelocked inputs should have a sequence number of UINT_MAX (0xFFFFFFFF).
 
 One party shall act as server and one party shall act as client.
 
@@ -352,17 +322,17 @@ If the exchange rate is insufficient, servers should modify the sell_coin_amount
 
 Servers should accept trades if the client echos back the result to the server.
 
-If a third party is used, the third party's public key must be modified
+A trade-id is generated for each transaction.
 
-    k = SHA-256(k_client | k_server)
+    tr_id = SHA-256(k_client | k_server)
 
 The result of the SHA-256 operation is considered a big endian encoded unsigned integer.
 
-If k falls outside the finite field, the server should select a different byte array and repeat until success.
+If tr_id falls outside the elliptic curve finite field, the server should select a different byte array and repeat until success.
 
 The third party's public key is modified to give
 
-    third_party_key_modified = k * third_party_key
+    third_party_key_modified = tr-id * third_party_key
 
 This key should be used to generate the third party's refund transaction.
 
@@ -370,96 +340,75 @@ This key should be used to generate the third party's refund transaction.
 
 This method is used to exchange public keys between the parties.  Each party has to provide 5 public keys and the long trader must provide hash_x.  The slow trader should set hash_x to Null.
 
-    {"id": 1, "method":"keys.request", "params": [key1, key2, ... key5, hash_x]}
+    {"id": 1, "method":"keys.request", "params": [tr_id, key1, key2, ... key5, hash_x]}
 
-The server responds with 5 public keys.
+The server responds with 5 public keys and hash_x.
 
     {"id": 1, "result": [key1, key2, ... key5, hash_x], "error": Null}
 
 ===Exchange Bail-in Transaction Hashes===
 
-This method is for exchanging bail-in transaction hashes and the A and B indexes.  The fast trader should set B to Null.
+This method is for exchanging bail-in transaction hashes and the A and B indexes.
 
-    {"id": 1, "method":"bail_in_hash.request", "params": [client_bail_in_hash A B]}
+    {"id": 1, "method":"k, bail_in_hash.request", "params": [tr_id, client_bail_in_hash A B]}
 
 The server responds with its own bail-in transaction hash.
 
     {"id": 1, "result":"server_bail_in_hash A B", "error": Null}
 
-Both hashes should be encoded as 64 character (32 byte) hashes.  This is the transaction id hash, not hash160.
+Both hashes should be encoded as 64 character (32 byte) hashes.  
 
-Note: The fast and slow trader's bail-in transactions are constructed differently.
+Note 1: This is the transaction id hash, not hash160.
+Note 2: The fast and slow trader's bail-in transactions are constructed differently.
 
-===Exchange Initial Transactions===
+===Exchange Signatures===
 
-This method is for the parties to exchange unsigned transactions.
+This method is for the parties to exchange signatures.
 
-    {"id": 1, "method": "exchange.initial_tx", "params": [server_signed_payout, client_refund, client_third_party_refund]}
+    {"id": 1, "method": "exchange.signatures", "params": [tr_id, server_payout_signature, server_refund_signature, server_third_party_signature]
 
 The parameters are defined as
-    server_signed_payout:      This is the signed payout transaction that pays to the server
-    client_refund:             This is the locked refund transaction that pays to the client
-    client_third_party_refund: This is the third party refund transaction (or Null) that pays to the client
+    server_payout_signature:          This is the signature for the server's payout transaction (input A)
+    server_refund_signature:          This is the signature for the server's timelocked refund transactions
+    server_third_party_signature:     This is the signature for the server's transaction to direct the output to a third party 
 
 The response is of the same form
 
-    {"id": 1, "result": [server_signed_payout, client_refund, client_third_party_refund], "error": Null}
+    {"id": 1, "result": [client_payout_signature, client_refund_signature, client_third_party_signature], "error": Null}
 
 The parameters are defined as
+    client_payout_signature:          This is the signature for the client's payout transaction (input A)
+    client_refund_signature:          This is the signature for the client's timelocked refund transactions
+    client_third_party_signature:     This is the signature for the client's transaction to direct the output to a third party
 
-    client_signed_payout:      This is the signed payout transaction that pays to the client
-    server_refund:             This is the locked refund transaction that pays to the server
-    server_third_party_refund: This is the third party refund transaction (or Null) that pays to the server
-
-===Exchange Final Transaction===
-
-This method is for the parties to exchange the final versions of the transactions.
-
-    {"id": 1, "method": "exchange.final_tx", "params": [server_signed_refund, server_signed_third_party_refund]}
-
-The parameters are defined as
-    server_signed_refund:             This is the locked signed refund transaction that pays to the server
-    server_signed_third_party_refund: This is the third party signed refund transaction (or Null) that pays to the client
-
-The response is of the same form
-
-    {"id": 1, "result": [server_signed_payout, client_refund, client_third_party_refund], "error": Null}
-
-The parameters are defined as
-
-    client_signed_refund:             This is the locked signed refund transaction that pays to the client
-    client_signed_third_party_refund: This is the third party signed refund transaction (or Null) that pays to the client
-
-Once final transactions are exchanged, no further communication is required.
+Once the 3 signatures are exchanged, no further communication is required.
 
 ===Exchange Bail-in Transactions===
 
-This method is for the parties to exchange bail-in transactions.  This allows both parties to broadcast the both bail-in transactions.
+This method is for the parties to exchange bail-in transactions.  This allows both parties to broadcast both bail-in transactions.
 
 Broadcasting the bail-in transaction prior to this step reduces malleability risk by the other party.
 
-    {"id": 1, "method": "exchange.bail.in", params: [server_bail_in]}
+    {"id": 1, "method": "exchange.bail.in", params: [tr_id, server_bail_in]}
 
 The response is of the same form
 
     {"id": 1, "result": [client_bail_in], "error": Null}
 
-Unlike for the previous two methods, the 
-
 ===Trade Cancel===
 
 This allows the parties to back out of a trade before the timeouts are completed.  It is a courtesy and not enforceable.
 
-    {"id": 1, "method": "cancel.transaction", "params": "unlocked_server_signed_refund"}
+    {"id": 1, "method": "cancel.transaction", "params": "unlocked_server_refund_signature"}
 
 The parameters are defined as
-    unlocked_server_signed_refund:  This is an unlocked version of the refund transaction that pays to the server
+    unlocked_server_refund_signature:   This is the signature for the server's refund transaction with locktime set to zero.
 
 The response is
-    {"id": 1, "result": [unlocked_client_signed_refund]}
+    {"id": 1, "result": [unlocked_client_refund_signature]}
 
 The parameters are defined as
-    unlocked_client_signed_refund:  This is an unlocked version of the refund transaction that pays to the client
+    unlocked_client_refund_signature:   This is the signature for the client's refund transaction with locktime set to zero.
 
 Since this method is only a courtesy, it doesn't matter that the server could fail to provide the client with the refund transaction.
 
@@ -469,26 +418,24 @@ Once this method is used, the parties should not proceed to step 3.
 
 This method is for submitting transactions to third parties.
 
-    {"id": 1, method:"arbitrate", "params": [k bail_in_transaction refund_transaction new_transaction]}
+    {"id": 1, method:"arbitrate", "params": [tr_id third_party_key bail_in_p2sh_redeem refund_transaction new_transaction]}
 
 The parameters are defined as
-    k:                      The k parameter encoded as a integer
+    tr_id:                  The tr_id parameter encoded as a integer
     third_party_key:        The third party's unmodified public key
-    bail_in_transaction:    The original bail-in transaction
+    bail_in_p2sh_redeem:    The P2SH Redeem script for the bail-in transction
     refund_transaction:     The refund transactions, fully signed
     new_transaction:        This is the new refund transaction
 
 The third party must
-* Verify that the refund transaction spends the bail_in_transaction
-* Verify that the refund transaction is properly signed
-* Verify that the new_transaction has the same output
-* Verify that the new_transaction has the same locktime as the refund_transactions
+ * Verify that the refund transaction spends the p2sh_redeem script
+ * Verify that the refund and new transaction are identical except for tx-in hashes
 
 The new transaction may have additional outputs.  This allows the third party to be paid.
 
 The response is
 
-    {"id": 1, "result": [signed_new_transaction], "error": Null}
+    {"id": 1, "result": [new_transaction_signature], "error": Null}
 
 The third party doesn't have to monitor all the chains.  As long as it doesn't allow the locktime to be modified or outputs to be redirected, the system remains secure.
 

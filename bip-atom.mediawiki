@@ -33,11 +33,11 @@ An additional standard transaction type is required on one of the networks for t
 
 ===Transaction Creation===
 
-1) Alice sends Bob five public keys (pub-A1, ..., pub-A5)
+1) Alice sends Bob three public keys (pub-A1, ..., pub-A3)
 
-2) Bob sends Alice five public keys (pub-B1, ..., pub-B5) and Hash160(x)
+2) Bob sends Alice three public keys (pub-B1, ..., pub-B3) and Hash160(x)
 
-    x = serialized{pub-B6 OP_CHECKSIG}
+    x = serialized{pub-B4 OP_CHECKSIG}
 
 3) Both parties creates their "bail-in" transaction. 
 
@@ -64,14 +64,14 @@ Transaction output 0 can only be spent with both parties' signatures.  Transacti
     Output 0 value: A
     ScriptPubKey 0: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
     Output 1 value: fa
-    ScriptPubKey 1: OP_HASH160 Hash160(x) OP_EQUAL_VERIFY pub-A3 OP_CHECKSIG
+    ScriptPubKey 1: OP_HASH160 Hash160(x) OP_EQUAL_VERIFY pub-A1 OP_CHECKSIG
     Output 2 value: change
     ScriptPubKey 2: <= 100 bytes
 
-    P2SH Redeem:    OP_2 pub-A2 pub-B2 OP_2 OP_CHECKMULTISIG
-    P2SH Redeem:    OP_2 pub-A2 pub-B2 pub-T OP_3 OP_CHECKMULTISIG
+    P2SH Redeem:    OP_2 pub-A1 pub-B1 OP_2 OP_CHECKMULTISIG
+    P2SH Redeem:    OP_2 pub-A1 pub-B1 pub-T OP_3 OP_CHECKMULTISIG
 
-Note: x = serialized{pub-B6 OP_CHECKSIG}
+Note: x = serialized{pub-B4 OP_CHECKSIG}
 
 The shorter version of P2SH Redeem should be used when a third party is not used.
 
@@ -99,7 +99,7 @@ This transaction can be spent by Alice.  Since it has Bob.Bail.In:1 as an input,
     Output value: B
     ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
 
-    P2SH Redeem:  pub-A3 OP_CHECKSIG
+    P2SH Redeem:  pub-A2 OP_CHECKSIG
 
 This transaction can be spent by Bob.  However, since it has Alice.Bail.In:1 as an input, he cannot sign the inputs unless he reveals x.
 
@@ -111,7 +111,7 @@ This transaction can be spent by Bob.  However, since it has Alice.Bail.In:1 as 
     Output value: A
     ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
 
-    P2SH Redeem:  pub-B3 OP_CHECKSIG
+    P2SH Redeem:  pub-B2 OP_CHECKSIG
 
 6) Both parties create the refund transactions
 
@@ -124,7 +124,7 @@ This transaction is timelocked, so that it can't be spent until the timeout (T) 
     ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
     Locktime:     (current block height) + (T / 10 minutes)
 
-    P2SH Redeem:  pub-B4 OP_CHECKSIG
+    P2SH Redeem:  pub-B3 OP_CHECKSIG
 
 This transaction is timelocked, so that it can't be spent until half the timeout (T/2) has passed.  This transaction does not require Alice.Bail.In:B, so Alice can spend it without x being revealed.
 
@@ -135,7 +135,7 @@ This transaction is timelocked, so that it can't be spent until half the timeout
     ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
     Locktime:     current block height + ((T/2)/(altcoin block rate))
 
-    P2SH Redeem:  pub-A5 OP_CHECKSIG
+    P2SH Redeem:  pub-A3 OP_CHECKSIG
 
 7) Bob and Alice exchange signatures
 

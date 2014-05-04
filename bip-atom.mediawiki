@@ -49,7 +49,7 @@ Transaction output 0 can only be spent with both parties' signatures.  Transacti
     Output 0 value:  B
     ScriptPubKey 0:  OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
     Output 1 value:  fb
-    ScriptPubKey 1:  OP_HASH160 Hash160(x) OP_EQUAL
+    ScriptPubKey 1:  OP_HASH160 Hash160(x) OP_EQUALVERIFY pub-A1 OP_CHECKSIG
     Output 2 value:  change
     ScriptPubKey 2:  <= 100 bytes
 
@@ -64,7 +64,7 @@ Transaction output 0 can only be spent with both parties' signatures.  Transacti
     Output 0 value: A
     ScriptPubKey 0: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
     Output 1 value: fa
-    ScriptPubKey 1: OP_HASH160 Hash160(x) OP_EQUAL_VERIFY pub-A1 OP_CHECKSIG
+    ScriptPubKey 1: OP_HASH160 Hash160(x) OP_EQUAL
     Output 2 value: change
     ScriptPubKey 2: <= 100 bytes
 

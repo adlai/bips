@@ -1,0 +1,216 @@
+<pre>
+  BIP: XYZ
+  Title: Merkle Sum Tree
+  Author: Noel Tiernan <tier.nolan@gmail.com>
+  Status: Draft
+  Type: Standards Track
+  Created: 2014-11-03
+</pre>
+
+==Abstract==
+
+This BIP describes a proposed hard-fork that uses a sum based Merkle tree instead of the standard one.
+
+==Motivation==
+
+The changes in this BIP improve the ability for SPV (Simple Payment Validation) nodes to audit the blockchain.  
+Currently, full nodes validate the entire blockchain and SPV nodes perform no validation.  There is no middle 
+ground where an enhanced SPV node can contribute some validation without having to perform full validation.  If
+this was made possible then SPV nodes could be configured to contribute some resources to the network.  A smartphone
+could be set to contribute CPU power to validate the blockchain when connected to mains power.
+
+Validation by SPV clients requires fraud proofs for every possible violation of the rules of the system [1].  A sum tree
+protects against inflation.  The current Merkle tree allows fraud proofs where transactions are not properly signed. 
+Spending non-existant outputs requires UTXO set commitments [2], but this is not a hard fork change.
+
+In addition, the proposal made in this BIP improves offline signing efficiency.
+
+==Summary==
+
+The changes in this BIP provide the following benefits
+
+* A SPV client can verify a sub-set of the transactions in a block to verify that no inflation has happened.
+* If a SPV client finds fraud, a compact fraud proof could be constructed.
+* The size of double spending proofs is reduced for very large transactions.
+* By including the input values in the transaction itself, offline signing requires less information to be sent to the signing device.
+
+==Specification==
+
+Beginning at block [SUM_TREE_HEIGHT], blocks must use the Merkle sum tree calculation instead of the current Merkle tree 
+calculation.
+
+===Merkle Sum Tree Hash===
+
+Definitions
+    
+    LE(x, size) is the little endian byte array representation of x of the given size
+    DSHA256(b) is the 32 byte digest given by double hashing b with the SHA256 hash function
+    {a | b} is the concatenation of the a and b byte arrays
+
+The Merkle sum tree hash takes an array of 40 byte digests and produces a 32 byte digest.  The input digests consists of two parts, an
+eight byte value and a 32 byte sub-digest.
+
+    {LE(value, 8) | (32 Byte sub-digest)}
+
+As with normal Merkle trees, digests are processed in pairs to give a single digest.  If there is an odd number of digests in the
+round, then the last digest is duplicated and appended to the array.  The parent digest is computed from its two child digests (left and right).
+
+    parent.digest = {LE(left.value + right.value, 8) | DSHA256(left.digest | right.digest)}
+
+This process is repeated until there is a single digest remaining.
+
+The final digest is generated from the root of the Merkle tree.
+
+    merkle_sum_digest = DSHA256(root.digest)
+
+This digest is used in place of the Merkle root field in the header.
+
+====Transaction Digest====
+
+40 byte digests are generated for each transaction in the block.  These digests are used as the leaves for the Merkle sum tree.
+
+The transaction digest uses Merkle sum digests for the inputs and the outputs.
+
+    transaction.digest = {LE(mint_fee + inputs.value - outputs.value, 8) | 
+                          DSHA256(LE(tx_version, 4) | inputs.digest | outputs.digest | LE(locktime, 4))}
+
+Note:  The mint fee is zero for non-coinbase transactions
+
+====Input Digest====
+
+A 40 byte digest is generated for each input.  These digests are the leaves of the inputs Merkle sum tree.
+
+The txin data format is modified by this BIP.  This is necessary so that the transaction digest can be generated from
+information contained within the transaction.
+
+An extra value field is added to the txin data structure.
+
+{|class="wikitable"
+! Field Size !! Description !! Data type !! Comments
+|-
+| 32 || previous_output || char[32] || The TXID of the transaction containing the previous output
+|-
+| 4 || index || uint32_t || The index of the previous output
+|-
+| 8 || value || int64_t || The value of the previous output (New)
+|-
+| 1+ || script length || var_int || The length of the scriptSig
+|-
+| ? || script || char[script_length] || The scriptSig
+|-
+| 4 || sequence || uint32_t || The sequence number for tx replacement
+|}
+
+The scriptSig array is hashed before being included in the calculations for the sub-digest.
+
+    input.digest = {LE(value, 8) | DSHA256(previous_output | LE(index, 4) | LE(value, 8) | DSHA256(script) | LE(sequence, 4))}
+
+====Output Digest====
+
+As with the inputs, the digests for the outputs of the transaction are the leaves of the Merkle sum tree.
+
+The format of the transaction outputs is unchanged.
+
+{|class="wikitable"
+! Field Size !! Description !! Data type !! Comments
+|-
+| 8 || value || int64_t || The value of the output
+|-
+| 1+ || script length || var_int || The length of the scriptPubKey
+|-
+| ? || script || char[script_length] || The scriptPubKey
+|}
+
+As with the input digests, the scriptPubKey is hashed before being included in the calculation for the sub-digest.
+
+    output.digest = {LE(value, 8) | DSHA256(LE(value, 8) | DSHA256(script)}
+
+====Notes====
+
+Since the var_ints for the input and output counts and the script lengths do not affect the Merkle root, 
+minimal length encoding of the lengths must be used when computing the txid values.
+
+===Signatures===
+
+The transaction serialization is changed by this BIP and signatures should use the updated serialization.
+
+===Merkle Blocks===
+
+Merkle blocks are blocks which only contain some of the transactions.  They allow nodes to prove to SPV clients
+that a particular transaction exists in a block without sending the entire block.  They are part of the Bloom
+filtering system [3].
+
+The changes to the Merkle tree in this BIP mean that extra data is required.  A new field is added to the merkleblock
+message.  This field must be included for blocks beginning at [SUM_TREE_HEIGHT] and should be ignored for blocks 
+before that point.
+
+{|class="wikitable"
+! Field Size !! Description !! Data type !! Comments
+|-
+| 4 || version || uint32_t || Block version information, based upon the software version creating this block
+|-
+| 32 || prev_block || char[32] || The hash value of the previous block this particular block references
+|-
+| 32 || merkle_root || char[32] || The reference to a Merkle tree collection which is a hash of all transactions related to this block
+|-
+| 4 || timestamp || uint32_t || A timestamp recording when this block was created (Limited to 2106!)
+|-
+| 4 || bits || uint32_t || The calculated difficulty target being used for this block
+|-
+| 4 || nonce || uint32_t || The nonce used to generate this block… to allow variations of the header and compute different hashes
+|-
+| 4 || total_transactions || uint32_t || Number of transactions in the block (including unmatched ones)
+|-
+| ? || hashes || uint256[] || sub-digest in depth-first order (including standard varint size prefix)
+|-
+| ? || flags || byte[] || flag bits, packed per 8 in a byte, least significant bit first (including standard varint size prefix)
+|-
+| ? || values || uint64[] || little endian values in depth-first order (including standard varint size prefix) (New)
+|}
+
+The 40 byte digest can be generated from the hashes and the values field.
+
+    digest = {values[i] | hashes[i]}
+
+==Rationale==
+
+The primary improvement from this BIP is that inflation can be detected without having to examine entire blocks.
+
+The extension of the merkle system to individual inputs and outputs means that double spending proofs are made more compact.
+A double spend proof requires paths to both transaction that have spent the output.  Both transactions must be 
+included in the fraud proof since they are the leaves of the Merkle tree.  This means that the fraud proof would be at least as
+large as the transactions.  With the tree configured as given in this BIP, the merkle path continues to each output.
+
+The scripts are hashed before including them in the input and output sub-digests.  This means that fraud proofs don't need
+to include the entire scripts in proofs relating to those inputs and outputs.  Again this reduces the potential for very
+large proofs if the scripts are large.
+
+
+==Backwards Compatibility==
+
+This is hard fork change.  Legacy clients will not accept blocks produced in accordance with this BIP.
+
+It is hoped that it could be included with the block size hard fork.
+
+The [SUM_TREE_HEIGHT] value should be set to the same block that the block size fork takes effect.
+
+Legacy transactions cannot be converted into the new serialization format automatically because signatures would
+be affected.  Clients should allow replacement of transactions in their memory pools with replacement transactions
+that are correctly signed with the new format.
+
+==Reference Implementation==
+
+TBD
+
+== References ==
+
+[1] https://bitcointalk.org/index.php?topic=131493.msg1411354#msg1411354
+
+[2] https://bitcointalk.org/index.php?topic=137933.msg1596626#msg1596626
+
+[3] BIP-37
+
+==Copyright==
+
+This document is placed in the public domain.
+

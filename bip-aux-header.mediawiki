@@ -1,0 +1,244 @@
+<pre>
+  BIP: XYZ
+  Title: Auxiliary Header Format
+  Author: Noel Tiernan <tier.nolan@gmail.com>
+  Status: Draft
+  Type: Standards Track
+  Created: 2014-11-03
+</pre>
+
+==Abstract==
+
+This BIP describes a method for adding an auxiliary header to Bitcoin blocks.
+
+==Motivation==
+
+This BIP outlines a way to efficiently add an extendable auxiliary header to the blockchain as a soft fork.
+
+While this BIP doesn't directly provide any benefits, many systems for Bitcoin require that data is embedded in the blocks.  They would benefit from an efficient way to accomplish this.
+
+* UTXO set commitment
+* Sum Merkle tree commitments
+* More efficient extra nonces
+
+==Specification==
+
+The auxiliary header is encoded into the second last transactions in the block.  It has three zero valued outputs, one which pays to OP_TRUE, one which pays to a known keypair and one which pays to OP_RETURN.  The last output contains the auxiliary header.
+
+The last transaction has a single input and a single output that pays to OP_RETURN and stores the digest of the auxiliary header.  The input spends the output from the previous transaction that pays to OP_TRUE.  The degrees of freedom in this transaction are intentionally limited.  This allows SPV peers to recreate it from a small amount of information.
+
+The number of transactions in a block is restricted to numbers which have a small number of non-zero bits when decremented by one.  This improves efficiency when sending the header to SPV clients. [1]  If three non-zero bits are allowed, the overhead is only 105 bytes per header. [2]
+
+===Special Transactions===
+
+The last two transactions in the block are defined as follows.
+
+====Auxiliary Header Transaction====
+
+The second last transaction in the block contains the auxiliary header one of the output scripts.  The transaction has three outputs
+
+* output which pays to OP_TRUE
+* output which pays to provided public key
+* output which contains the auxiliary header and pays to OP_RETURN
+
+The SEC encoded public key is
+
+    0366c64ced3b431efc6969933779cb7efc9faf9f0ccc68cfd3daccb1c268a8a6cb
+
+The, randomly selected, private key, in big-endian format, matching the public key is
+
+    182db3869b5dfdd8ce435606e4134d6515f249c258d8dece49485e7fb6374569
+
+The transaction is encoded as follows.
+
+    02000000:            [4]  version (2)
+    01:                  [1]  one input
+    // Input 0
+    <prev_tx>:           [32] txid of previous transaction
+    <prev_tx_index>:     [4]  the index of the output of the previous transaction
+    <in-script-length>:  [1+] the length of the signature script
+    <in-script>          [?]  The signature script
+    00000000:            [4]  the sequence number
+    03:                  [1]  one output
+    // Output 0
+    0000000000000000:    [8]  the value of the output (0)
+    01:                  [1]  the output script length (1)
+      51:                [1]  OP_TRUE
+    // Output 1
+    0000000000000000:    [8]  the value of the output (0)
+    24:                  [1]  the output script length
+      4C:                [1]  OP_PUSHDATA1
+      21:                [1]  The script length (33)
+      03
+      66c64ced3b431efc
+      6969933779cb7efc
+      9faf9f0ccc68cfd3
+      daccb1c268a8a6cb   [33] The public key
+      AC:                [1]  OP_CHECKSIG
+     // Output 2
+    0000000000000000:    [8]  the value of the output (0)
+    <out-script-length>: [1+] The length of the script
+      6A:                [1]  OP_RETURN
+      4C:                [1]  OP_PUSHDATA1
+      20                 [1]  Page 0 length
+      <page0>            [32] Page 0 of the auxiliary header
+      ....
+      4C:                [1]  OP_PUSHDATA1
+      20                 [1]  Length of the last page
+      <last_page>        [32] The last page of the auxiliary header
+    00000000:            [4]  locktime (0, unlocked)
+
+Each page in the auxiliary header is 64 bytes.  The number of pages is determined by the version number of the auxiliary header.
+
+If possible, the <code>prev_tx</code> and <code>prev_tx_index</code> fields must spend the second output of corresponding transaction from the previous block.
+
+This may not be possible during the transition period.  Legacy blocks could contain transactions which spend all the outputs that pay to the given public key.  In that situation, any entry in the unspent transaction output (UTXO) set can be used.
+
+====Auxiliary Header Digest Transaction====
+
+The digest of the auxiliary header is stored in the last transaction in the block.  The transaction is serialized as follows.
+
+
+    02000000:            [4]  version (2)
+    01:                  [1]  one input
+    // Input 0
+    <prev_tx>:           [32] txid of previous transaction
+    <prev_tx_index>:     [4]  the index of the output of the previous transaction
+    00:                  [1]  the length of the signature script (0, empty)
+    00000000:            [4]  the sequence number
+    01:                  [1]  one output
+    // Output 0
+    0000000000000000:    [8]  the value of the output (0)
+    23:                  [1]  the output script length (35)
+      6A:                [1]  OP_RETURN
+      4C:                [1]  OP_PUSHDATA1
+      25:                [1]  Push data contains 37 bytes
+      <aux_header_digest>[32] The root page digest
+      0000000000:        [5]  Padding to make the transaction 100 bytes
+    00000000:            [4]  locktime (0, unlocked)
+
+The <code>prev_tx</code> and <code>prev_tx_index</code> fields must spend the OP_TRUE output from the second last transaction.  It will always be available.
+
+===Auxiliary Header Hash Function===
+
+Definitions:
+
+    SHA256(x) is the digest given by the SHA256 hash function for byte array x
+    DHASH(x) means SHA256(SHA256(x))
+    x | y means the concatenation of byte arrays x and y
+
+To support extending the auxiliary header, the digest of the subsequent page is appended to the page before hashing.  This creates a linear hash chain.  Assuming that there are N pages, then the digest is computed as follows.
+
+    page_digest(i) = DHASH(pages[i] | page_digest(i + 1))
+    ...
+    page_digest(N-1) = DHASH(pages[N-1])
+
+The <code>aux_header_digest</code> field is set to the digest for page zero.
+
+===Minimizing Branch Digests===
+
+The number of digests required for the Merkle branch can be determined from the transaction count.  The number of non-zero bits in the transaction count (excluding the extra transaction) determines the number of digests required [2].
+
+This limit on the number of digests in the branch means that some transaction counts cannot be supported.  
+
+This means that some transactions would be excluded and be delayed until the next block.  If 3 non-zero bits are allowed, then at least 87.5% of the transactions in the memory pool could be included in the block [2].
+
+===Auxiliary Header===
+
+The length of the auxiliary header depends on the version number of the auxiliary header.
+
+If the auxiliary version number is greater than the version number known by the node, then the node should ignore extra fields due to the later version number.
+
+The version 0 auxiliary header contains two fields and has a length of 36 bytes.
+
+{|class="wikitable"
+! Field Size !! Description !! Data type !! Comments
+|-
+| 4 || aux_version || uint32 || The aux header version number
+|-
+| 32 || extra_nonce2 || uint256 || This is an alternative extra nonce
+|}
+
+New version numbers should only add new fields.
+
+===Version 3 Blocks===
+
+The block version number is increased by one to indicate blocks that contain auxiliary headers.
+
+A version 3 block is invalid if
+
+* there is no auxiliary header included
+* the number of non-zero bits in (txn_count - 1) is more than 3
+* the aux_version 0 fields are absent
+* for blocks that have an aux_version 0 auxiliary header
+** the number of pages is not equal to one
+** the padding is not all zeros
+
+===Deployment===
+
+# Increase the block version to 3
+# Add a version 0 auxiliary header to all blocks
+# If 750 of the last 1000 blocks are version 3 or greater, reject invalid version 3 blocks. (testnet: 51 of the last 100)
+# if 950 of the last 1000 blocks are version 3 or greater, reject version 2 or lower blocks. (testnet: 75 of the last 100)
+
+==Rationale==
+
+===Hashing the Auxiliary Header===
+
+The hash function for the auxiliary is designed to allow it to be extended, while still allowing legacy and low performance SPV nodes process the headers.  
+
+An SPV node with low RAM might assign a fixed amount of RAM to process the auxiliary header.  If the auxiliary header increases in size, then it may not be able to process it.
+
+With a linear hash chain, it can be sent only the pages that it requests and the digest of the subsequent page.
+
+The last transaction has as few degrees of freedom as possible.  This keeps the amount of information that needs to be sent low to recreate it.
+
+===Restricting the Merkle Path===
+
+There is a tradeoff between the number of entries in the Merkle branch and the number of valid transaction counts.
+
+If more entries are allowed in the Merkle branch, then there are fewer "holes" in the list of valid transaction counts.  3 entries in the Merkle branch is selected since it keeps the auxiliary header overhead small, while keeping the number of spaces small.
+
+With 3 entries in the Merkle branch, no more than 12.5% of the entries in the memory would be delayed until the next block.  This is a small number of transactions.  The tradeoff is given in the following table.
+
+{|class="wikitable"
+! Merkle Branch Size !! Worst Case Txs Delayed !! Overhead !! Comments
+|-
+| 1 || 50% || 41 || The number of transactions must be a power of 2
+|-
+| 2 || 25% || 73 ||
+|-
+| <b>3</b> || <b>12.5%</b> || <b>105</b> || <b>Recommended</b>
+|-
+| 4 || 6.25% || 137 || 
+|-
+| 5 || 3.125% || 169 || 
+|}
+
+These are worst case delays, and in many cases the number of transactions delayed would be lower.  Padding transactions could be added to the block to bring the total up to one of the allowed values.  These transactions would be minimal sized (100 bytes).
+
+===Deployment===
+
+This uses the same deployment rules as BIP 34 (block height).
+
+==Backwards Compatibility==
+
+# Older clients will accept version 3 blocks
+# Users and merchants should be unaffected
+# Miners are recommended to update to version 3 blocks
+# Miners who do not upgrade will be orphaned once 95% is achieved
+# Mining pools which use the extra_nonce2 may have reduced bandwidth requirements
+
+==Reference Implementation==
+
+TBD
+
+== References ==
+
+[1] https://bitcointalk.org/index.php?topic=847538.0
+
+[2] https://bitcointalk.org/index.php?topic=847538.msg9478318#msg9478318
+
+==Copyright==
+
+This document is placed in the public domain.

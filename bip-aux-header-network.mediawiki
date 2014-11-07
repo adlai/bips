@@ -1,0 +1,233 @@
+<pre>
+  BIP: ABC
+  Title: Auxiliary Header Format
+  Author: Noel Tiernan <tier.nolan@gmail.com>
+  Status: Draft
+  Type: Standards Track
+  Created: 2014-11-03
+</pre>
+
+==Abstract==
+
+This BIP describes a change to the network protocol to support auxiliary headers.
+
+==Motivation==
+
+In BIP XYZ, auxiliary headers are defined.  A change to the network protocol is required so that SPV nodes can make use of them.  
+
+==Specification==
+
+===Network Protocol Changes===
+
+A new message, <code>aheaders</code>, is added to the network protocol and a new field is added to the <code>getheaders</code> message.
+
+The network protocol version is increased to 70003.
+
+====Getheaders Message Change====
+
+The <code>getheaders</code> message has an additional field, aux_pages, added to support auxiliary headers.
+
+{|class="wikitable"
+! Field Size !! Description !! Data type !! Comments
+|-
+| 4 || version || uint32_t || the protocol version
+|-
+| 1+ || hash count || var_int || number of block locator hash entries
+|-
+| 32+ || block locator hashes || char[32] || block locator object; newest back to genesis block (dense to start, but then sparse)
+|-
+| 32 || hash_stop || char[32] || hash of the last desired block header; set to zero to get as many blocks as possible (2000)
+|-
+| <b>1+</b> || <b>aux_pages</b> || <b>var_int</b> || <b>The maximum number of auxiliary header pages to send</b>
+|}
+
+The peer should send as many pages as are available, but not more than the aux_pages field.  
+
+A value of zero for aux_pages means that the standard <code>headers</code> message must be used instead of the <code>aheaders</code> message.  This is the default, if the field is absent.
+
+A <code>headers</code> message should be sent instead of an <code>aheaders</code> message, if none of the blocks referenced by the message have an auxiliary block header.
+
+====Auxiliary Header Message====
+
+The <code>aheaders</code> message is used to send auxiliary block headers.  This message is sent instead of the <code>headers</code> message if the new aux_pages field is present and greater than zero.
+
+Each entry contains three pieces of information.
+
+* The Merkle branch to the last transaction in the block
+* The requested pages of the auxiliary header
+* The standard block header information
+
+''Merkle Branch Info
+
+The Merkle branch information structure contains the information for constructing the Merkle branch to the transaction containing the digest of the auxiliary header.  It is defined as follows.
+
+{|class="wikitable"
+! Field Size !! Description !! Data type !! Comments
+|-
+| 1 or 33 || merkle_root || var_str || Merkle root (length 0 if not present)
+|-
+| 1+ || txn_count || var_int || The number of transactions in the block
+|-
+| 1+ || merkle_count || var_int || The number of digests required for the Merkle branch
+|-
+| 32x? || branch_digests || uint256[merkle_count] || The off-path digests required for the Merkle branch
+|-
+| 32 || prev_tx || uint256 || The txid of the input for the last transaction
+|-
+| 4 || prev_tx_index || uint32 || The output index of the input into the last transaction
+|-
+
+|}
+
+The merkle_root is only present for blocks that don't have an auxiliary header.  The merkle_count should be set to zero in that case.
+
+Unlike in the headers message, the txn_count should be set the number of transactions in the block and not zero.
+
+''Auxiliary Header Pages
+
+{|class="wikitable"
+! Field Size !! Description !! Data type !! Comments
+|-
+| 1+ || page_count || var_int || The number of pages in the auxiliary header
+|-
+| 64x? || pages || char[page_count][64] || The array of 64 byte pages of the auxiliary header
+|-
+| 1 or 33 || salt_digest || var_str || 32 byte salt (length 0 if not present)
+|}
+
+The salt_digest is only present if the auxiliary header is present but truncated.  
+
+The truncation must occur on page boundaries and the field contains the digest of the first page that is not included.
+
+As many pages of the header as known should be sent.  The page_count is set to zero for blocks that don't have an auxiliary header.
+
+''Auxiliary Block Header
+
+The entire auxiliary block header is defined as follows.
+
+{|class="wikitable"
+! Field Size !! Description !! Data type !! Comments
+|-
+| 4 || version || var_int || Block version
+|-
+| 32 || prev_block || uint256 || The digest of the previous block's header 
+|-
+| 4 || timestamp || uint32 || The timestamp for the block
+|-
+| 4 || bits || uint32 || The difficulty target for the block
+|-
+| 4 || nonce || uint32 || The nonce for the block
+|-
+| ? || branch_info || merkle_branch_info || The Merkle path and auxiliary header page information
+|-
+| ? || aux_pages || aux_header_pages || The pages of the auxiliary header
+|}
+
+Excluding the fields from the standard header, the size of the auxiliary header is 
+
+    41 + 32 * salt_present + 32 * branch_digests + 64 * pages
+
+Assuming that at most 3 digests are allowed for the Merkle branch and no salt is required, the total overhead is 137 bytes.
+
+There is sufficient information in the branch_info to compute the Merkle root for the block, so it can be omitted from the auxiliary block header.  This lowers the overhead by 32 additional bytes giving 105 bytes per block overhead to support the auxiliary header.
+
+If the digest of the auxiliary header was embedded in the coinbase, then the entire coinbase transaction would need to be included, which would give a much larger overhead.  This is especially true for mining pools that have a large number of outputs in the coinbase.
+
+''Auxiliary Headers Message
+
+The <code>aheaders</code> messages is defined as follows.
+
+{|class="wikitable"
+! Field Size !! Description !! Data type !! Comments
+|-
+| 4 || aux_version || uint32 || The highest auxiliary header version the node understands
+|-
+| 1+ || count || var_int || The auxiliary block header count
+|-
+| ?x? || aheaders || aux_block_header || The auxiliary headers
+|}
+
+It operates in the same manner as the headers message.
+
+====Computing the Merkle Root====
+
+The Merkle tree is computed in levels.  To compute the next level, the digests are paired with their neighbours.  These 2 digests are then combined to give a single digest.  The number of digests is approximately halved by each level.
+
+    Digest(level + 1, i) = DHASH(Digest(level, 2 * i) | Digest(level, (2 * i) + 1))
+
+This formula means that the other digest in the pair must be given in order to compute the digest for the next level.  This has a cost of 32 bytes per level.
+
+However, if the number of digests is odd, then the final digest has no partner.  This means that it must be paired with itself and there is no need for the partner digest to be provided for that level.
+
+Consider the case where there are 19 transactions.  Each transaction contributes a digest for level 0.
+
+    Level 0: 19 digests (9 pairs and 1 extra)  
+    Level 1: 10 digests (5 pairs and 0 extra)  
+    Level 2: 5 digests (2 pairs and 1 extra)  
+    Level 3: 3 digests (1 pair and 1 extra)  
+    Level 4: 2 digests (1 pair and 0 extra)  
+    Level 5: 1 digest (done)
+
+Only levels 1 and 4 have an even number of digests.  This means only 2 extra digests are required. 
+
+The psuedo-code for computing the Merkle root is as follows.
+
+    
+    i = 0
+    tx_count = <txn_count>
+    digest = DHASH(transaction)
+    while (tx_count > 1)
+      if (tx_count % 2) == 0 // even
+        digest = DHASH(branch_digests[i] | digest)
+        i += 1
+        tx_count = (tx_count + 1) / 2
+      else                   // odd
+        digest = DHASH(digest | digest)
+        tx_count = tx_count / 2
+    
+    if (i != branch_digests.length)
+      // to many branch digests provided
+      return null
+    
+    return digest
+    
+
+Digests are only read from branch_digests for some of the iterations.
+
+====Block Digest====
+
+With the exception of the Merkle root, all information in the standard block header is included as part of the auxiliary message structure.
+
+Once the Merkle root has been determined, the final digest for the block header can be computed.
+
+==Rationale==
+
+Since the <code>headers</code> message contains an array of block header data structures, it is not possible to simply increase the size of the data structure.  This would break backward compatibility.
+
+A new message is required for sending auxiliary headers.  The Merkle root field can be eliminated for this message, saving 32 bytes per header sent.
+
+An auxiliary header version of the <code>getheaders</code> message is not needed.  The new aux_pages field is sufficient to allow support of both header messages.
+
+SPV peers can download the auxiliary headers using the <code>getheaders</code> message and indicate how many pages of the auxiliary header they should be sent.  This keeps bandwidth low for SPV clients, while still allowing the auxiliary header to be extended.
+
+==Backwards Compatibility==
+
+This adds a new message and a new field to an old message.
+
+Old clients will not use the new field, so will always receive <code>headers</code> messages in response.
+
+When a node upgrades, it will need to scan the blockchain to extract the auxiliary headers from blocks that it has received already.
+
+==Reference Implementation==
+
+TBD
+
+== References ==
+
+[1] https://bitcointalk.org/index.php?topic=847538.0
+
+[2] https://bitcointalk.org/index.php?topic=847538.msg9478318#msg9478318
+
+==Copyright==
+
+This document is placed in the public domain.

@@ -49,7 +49,7 @@ The, randomly selected, private key, in big-endian format, matching the public k
 
     182db3869b5dfdd8ce435606e4134d6515f249c258d8dece49485e7fb6374569
 
-The transaction is encoded as follows.
+An example transaction is as follows.
 
     02000000:            [4]  version (2)
     01:                  [1]  one input
@@ -90,9 +90,15 @@ The transaction is encoded as follows.
 
 Each page in the auxiliary header is 64 bytes.  The number of pages is determined by the version number of the auxiliary header.
 
-If possible, the <code>prev_tx</code> and <code>prev_tx_index</code> fields must spend the second output of corresponding transaction from the previous block.
+The <code>prev_tx</code> and <code>prev_tx_index</code> fields should spend the second output of corresponding transaction from the previous block.
 
-This may not be possible during the transition period.  Legacy blocks could contain transactions which spend all the outputs that pay to the given public key.  In that situation, any entry in the unspent transaction output (UTXO) set can be used.
+This may not be possible during the transition period.  Legacy blocks could contain transactions which spend all the outputs that pay to the given public key.
+
+A valid auxiliary header transaction must
+* have exactly three outputs
+* the first output must pay to OP_TRUE
+* the second output must pay to the given script
+* the third output's script must start with OP_RETURN, followed by an OP_PUSHDATA1 for each 64 byte page
 
 ====Auxiliary Header Digest Transaction====
 

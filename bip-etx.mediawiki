@@ -59,15 +59,15 @@ The new transaction, "tx", message is identical, except for additional fields in
 |-
 | 4 || index || uint32_t || The index of the UTXO
 |-
-| 8 || value || int64_t || The value of the UTXO (New)
-|-
 | 1 || utxo_type || uchar || The type of the UTXO (New)
+|-
+| 8 || value || int64_t || The value of the UTXO (New)
 |-
 | 1+ || pk_script_length || var_int || Length of the pk_script (New)
 |-
 | ? || pk_script || uchar[] || The public key script for the output (New)
 |-
-| 4 || height || uint32_t || The minimum block height that this UTXO can be included in (New)
+| 1+ || height || var_int || The minimum block height that this UTXO can be included in (New)
 |}
 
 The minimum height is equal to the height of the block that the transaction is included in, or height + COINBASE_MATURITY for coinbase UTXOs.
@@ -134,13 +134,17 @@ The template for P2PKH is as follows.
 | 24 || 0xAC || OP_CHECKSIG ||
 |}
 
+==Canonical Digest==
+
+The canonical digest for each UTXO shall be equal to first 8 bytes of the digest given when the UTXO is serialized using the new OutPoint format and passed to the double SHA256 hash function.
+
 ==Special Case Rule For BIP30 Compliance==
 
-There are two pairs of coinbase transactions that have the same txid.  Only one output of each pair is spendable, but all 4 outputs would generate different digests.
+There are two pairs of coinbase transactions that have the same txid.  Only one output of each pair is spendable, but all 4 outputs generate unique canonical digests.
 
-This would mean that all 4 are spendable, which is incorrect and could cause a fork.
+This means that all 4 are spendable nodes which use the digests alone to verify the UTXO set.
 
-An additional rule is required to prevent all 4 outputs being added into the UTXO set.  This can be achieved by excluding the 2nd coinbase of each pair from being included in the UTXO set.  The condition is the same as for BIP30.
+An additional rule prevents all 4 outputs being added into the UTXO set.  This can be achieved by excluding the 2nd coinbase of each pair from being included in the UTXO set.  The condition is the same as for BIP30.
 
     
     bool fExcludeCoinbaseUTXO = !((pindex->nHeight==91842 && pindex->GetBlockHash() == uint256("0x00000000000a4d0a398161ffc163c503763b1f4360639393e0e4c8e300e0caec")) ||
@@ -149,31 +153,11 @@ An additional rule is required to prevent all 4 outputs being added into the UTX
     
 When processing those two blocks, the UTXO from the coinbase must not be added to the UTXO set.
 
-==Canonical Digest==
-
-The canonical digest for each UTXO shall be equal to first 10 bytes of the digest given when the UTXO serialization is passed to the double SHA256 hash function.
-
-The UTXO set serialization is as follows.
-
-{|class="wikitable"
-! Field Size !! Description !! Data type !! Comments
-|-
-| 32 || txid || uint256 || The txid of the referenced transaction
-|-
-| 4 || index || uint32_t || The index of the UTXO
-|-
-| 8 || value || int64_t || The value of the UTXO
-|-
-| ? || pk_script || uchar[] || The public key script for the output
-|-
-| 4 || height || uint32_t || The minimum block height that this UTXO can be included in
-|}
-
 ==Soft Fork Rule==
 
-Transactions with outputs which collide with entries in the UTXO set may not be included in the block.  The block is processed from the first transaction to the last.  UTXOs spent by the transaction are removed from the set before its outputs are added.
+Two UTXOs are considered to collide if they both have the same canonical digest.
 
-Two UTXOs collide if they both have the same canonical digest.
+Transactions with outputs which collide with entries in the UTXO set may not be included in the block.  UTXO entries are not considered to be freed until the end of the block.
 
 Since the height field is incremented for each block.  In the unlikely event of a collision, the colliding unconfirmed transaction can simply be included in the next block.
 
@@ -206,3 +190,16 @@ UTXO-lite nodes are nodes which only store the reduced UTXO digest set.  This ty
 If all miners run upgraded nodes, then all new blocks would initially be broadcast in extended format and legacy nodes could receive downgraded versions.
 
 Legacy nodes may be unable to spend their coins unless they peer with nodes that can perform the upgrade, directly or via a path of legacy nodes.  Wallet software could easily be updated to produce etx messages.  It is more efficient for wallets to manage their own UTXOs than expecting the data to be stored on every noce.  This creates an incentive for wallet users to upgrade.  
+
+==Locally Salted Extended Digests==
+
+UTXO-lite nodes should use additional bytes for the digest using a locally generated salt value.
+
+    Salt[31:0] = RandomBytes()
+    FullHash = hash(UTXO Serialization)
+    CanonicalDigest = H(7:0)
+    SaltedDigest = hash(Salt | FullHash)
+    
+    LocalDigest  = CanonicalDigest | SaltedDigest[3:0]
+    
+This mitigates against an attack where an attacker tries to find an OutPoint with a canonical digest that is already in the UTXO set.  This would allow the attacker to spend the fake UTXO, which could have any value up to 21 million BTC.  By having some locally generated bytes and some canonical bytes in the digest, collisions can be avoided, while still mitigating this attack.

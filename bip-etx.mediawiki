@@ -30,13 +30,11 @@ For each UTXO, four pieces of information are stored; the value of the UTXO, the
 
 At the time of writing, the UTXO set serialization is 35.89 bytes per UTXO.  
 
-If all the information about the UTXO was known, then the UTXOs could be stored in the database as a set of hashes.  Each entry could be stored as the first bytes of hash(txid | index | height | is_coinbase | scriptPubKey | value).
+If all the information about the UTXO was known, then the UTXOs could be stored in the database as a set of digests.  Each entry could be identified by the first bytes of hash(txid | index | height | is_coinbase | scriptPubKey | value).
 
-If the first 8 bytes were stored and assuming 20 million UTXOs in the set, the odds of a collision is 1 in 92234.  With 10 bytes, the odds are one in 6 billion.  Collisions are unlikely to occur in practice, so blocks that cause collisions could simply be rejected.  One of the colliding transactions could be included in the block and the other transaction(s) could be included in later block.  This would change the height value and the transaction would be unlikely to collide.
+If the first 8 bytes were used as a UTXO identifier for the 20 million UTXOs in the set, the odds of a collision is 1 in 92234.  With 10 bytes, the odds are one in 6 billion.  Collisions are unlikely to occur in practice, a soft fork can simply reject blocks that cause a collision.  One of the colliding transactions can be included in the block and the other transaction(s) could be included in later block.  They would have different height values and so different identifiers.
 
-The odds of a node accepting a false transaction is even lower.  If 8 bytes is used per entry, a transaction with a non-existent input has a one in 922 billion chance of being accepted.  Even knowing the node_specific_salt, this is considerable effort and only one node will actually accept the false transaction.
-
-In addition, since the UTXO entry size can be fixed, it may be possible to store the database more efficiently due to fixed field sizes.  Very long scriptPubKeys can be supported without increasing the UTXO database size.
+In addition, since the UTXO entry size can be fixed, it may be possible to store the database more efficiently due to fixed field sizes.  Very long scriptPubKeys would have no effect on the UTXO database size.
 
 ====Transaction Verification Locality====
 
@@ -69,7 +67,7 @@ The new transaction, "tx", message is identical, except for additional fields in
 |-
 | ? || pk_script || uchar[] || The public key script for the output (New)
 |-
-| 4 || height || uint32_t || The minimum block height that this UTXO can be included in
+| 4 || height || uint32_t || The minimum block height that this UTXO can be included in (New)
 |}
 
 The minimum height is equal to the height of the block that the transaction is included in, or height + COINBASE_MATURITY for coinbase UTXOs.
@@ -164,9 +162,9 @@ The UTXO set serialization is as follows.
 |-
 | 4 || index || uint32_t || The index of the UTXO
 |-
-| 8 || value || int64_t || The value of the UTXO (New)
+| 8 || value || int64_t || The value of the UTXO
 |-
-| ? || pk_script || uchar[] || The public key script for the output (New)
+| ? || pk_script || uchar[] || The public key script for the output
 |-
 | 4 || height || uint32_t || The minimum block height that this UTXO can be included in
 |}

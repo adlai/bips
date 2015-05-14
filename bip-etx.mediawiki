@@ -104,6 +104,8 @@ The pk_script can be recovered from the signature script when the pay to script 
 
 The signature script is run to determine the top entry in the stack.  If the stack is empty or the top entry is not 20 bytes, then the transaction is invalid.
 
+Since inputs where the signature script contains non-push operations must use the UTXO_RAW type and do not need recovery, script evaluation is very fast.
+
 The template for P2SH is as follows.
 
 {|class="wikitable"

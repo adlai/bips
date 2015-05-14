@@ -68,23 +68,31 @@ The new transaction, "tx", message is identical, except for additional fields in
 | 1+ || height || var_int || The block height the transaction was included in (New)
 |}
 
-There are three UTXO types.
+The height should be set to zero, if the input into the transaction has not been included in a block yet.
+
+It is recommended that nodes which set the height to zero for transactions buried more than 20 blocks deep in the main block chain are considered misbehaving node.
+
+There are four UTXO types.
 
 {|class="wikitable"
 ! Value !! Name !! Description
 |-
-| 0 || UTXO_RAW || Uncompressed pk_script
+| 0x01 || UTXO_RAW || Uncompressed pk_script
 |-
-| 1 || UTXO_P2SH || Pay to script hash template
+| 0x02 || UTXO_P2SH || Pay to script hash template
 |-
-| 2 || UTXO_P2PKH || Pay to public key hash template
+| 0x04 || UTXO_P2PKH || Pay to public key hash template
+|-
+| 0x80 || UTXO_COINBASE || Indicats a coinbase transaction
 |-
 | 0xFF || UTXO_UNKNOWN || Reserved (used internally)
 |}
 
+The UTXO_COINBASE flag can be combined with any of the other 3.
+
 The pk_script array is only used for the UTXO_RAW type.  In the other two cases, it stores a zero length array and the pk_script is recovered from the signature script.  
 
-Use of the UTXO_P2SH and UTXO_P2PKH type is mandatory, if the UTXO matches the template.
+If the scriptSig is not push only, the UTXO_RAW type must be used.  Otherwise, for UTXOs which match one of the two template, the UTXO_P2SH and UTXO_P2PKH type must be used.
 
 ====Block Message====
 

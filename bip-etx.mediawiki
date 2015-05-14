@@ -115,7 +115,7 @@ The template for P2SH is as follows.
 |-
 | 1 || 0x14 || Push 20 bytes || 
 |-
-| 2-21 || Script Hash || || Copy the top of the stack
+| 2-21 || Script Hash || n/a || Copy the top of the stack
 |-
 | 22 || 0x87 || OP_EQUAL || 
 |}
@@ -131,7 +131,7 @@ The template for P2PKH is as follows.
 |-
 | 2 || 0x14 || Push 20 bytes || 
 |-
-| 3-22 || Key Hash || || Copy the top of the stack
+| 3-22 || Key Hash || n/a || Copy the top of the stack
 |-
 | 23 || 0x88 || OP_EQUALVERIFY ||
 |-

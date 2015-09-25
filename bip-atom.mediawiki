@@ -444,9 +444,9 @@ The third party doesn't have to monitor all the chains.  As long as it doesn't a
 
 The protocol outlined in this BIP requires the use of a single non-standard scriptPubKey.
 
-The Alice.Payout transaction has a scriptPubKey of the following form.
+The Bob.Bail.In transaction has a scriptPubKey of the following form.
 
-    OP_HASH160 Hash160(x) OP_EQUAL_VERIFY pub-A2 OP_CHECKSIG
+    OP_HASH160 Hash160(x) OP_EQUAL_VERIFY pub-A1 OP_CHECKSIG
 
 All the other scriptPubKeys are standard transactions.
 

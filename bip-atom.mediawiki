@@ -9,13 +9,15 @@
 
 ==Abstract==
 
-This BIP describes a method for atomically trading coins between Bitcoin and a Bitcoin-like alternative coin (altcoin). 
+This BIP describes a method for atomically trading digital assets living in separate blockchains. 
 
 ==Motivation==
 
-There are many coin trading exchanges.  These websites allow users to trade Bitcoins for altcoin, and also to trade one type altcoin for another.
+There are many centralized cryptocurrency exchanges.  These websites typically allow users to trade Bitcoins for altcoins, or to trade between altcoins; they are centralised in nature, and require trusting the exchange operator.  A p2p coin trading system requires a way for traders to trade their coins in an atomic way.
 
-These sites are centralised in nature.  A p2p coin trading system requires a way for traders to trade their coins in an atomic way.
+Such a system also enables asset holders to "vote with their money" in the event of a single chain splitting in two as a result of a non-consensus hard-fork, without having to delegate their votes to centralized exchanges.
+
+This BIP does not address counterparty discovery and offer advertisement.
 
 ==Protocol Overview==
 

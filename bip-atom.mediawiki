@@ -265,13 +265,13 @@ params: The method parameters
 
 The server shall reply to Request methods with a response message.
 
-    {"id": 1, "result": result, "error: Null}
+    {"id": 1, "result": result, "error": Null}
 
 ===Error Message===
 
 The server shall reply with an error message, if the request is invalid.
 
-    {"id": 1, "result": Null, "error: [error_code, "error_string"]}
+    {"id": 1, "result": Null, "error": [error_code, "error_string"]}
 
 ===Methods===
 
